@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+    <title>4小时 QC 检验情况汇总</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        :root {
+            --bg: #f1f1ee; --surface: #fcfcfb; --ink: #141413; --ink2: #52514e; --ink3: #6b6a64;
+            --line: #e0dfda; --ctrl: #e7e6e1; --warn: #a14a00; --active: #2a78d6;
+            --font: "IBM Plex Sans", "Noto Sans SC", system-ui, sans-serif;
+            --tb-blue: #9bc2e6; --tb-green: #a9d08e;
+        }
+        body { background: var(--bg); color: var(--ink); font-family: var(--font); padding: 20px; margin: 0; }
+        .wrap { max-width: 1600px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+        
+        header { background: var(--surface); padding: 16px 24px; border: 1px solid var(--line); border-radius: 10px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;}
+        h1 { font-size: 22px; font-weight: 600; margin: 0; }
+        .sub { color: var(--ink2); margin-top: 4px; font-size: 13px; }
+        
+        .controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap;}
+        .upload-btn { background: var(--surface); border: 1px solid var(--ink); padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; box-shadow: 0 2px 4px rgba(0,0,0,0.05); transition: 0.2s;}
+        .upload-btn:hover { background: var(--ctrl); }
+        
+        .date-picker { padding: 5px 10px; border-radius: 6px; border: 1px solid var(--line); font-family: var(--font); font-size: 13px; color: var(--ink);}
+        
+        .seg { display: inline-flex; background: var(--ctrl); border-radius: 8px; padding: 3px; gap: 2px; }
+        .seg label { padding: 6px 14px; border-radius: 6px; font-weight: 500; color: var(--ink2); cursor: pointer; font-size: 13px; transition: 0.2s;}
+        .seg input { display: none; }
+        .seg input:checked + label { background: var(--ink); color: var(--surface); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(500px, 1fr)); gap: 16px; }
+        .card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 20px; display: flex; flex-direction: column; gap: 10px; }
+        .card h2 { margin: 0; font-size: 16px; font-weight: 600; border-bottom: 1px solid var(--line); padding-bottom: 10px; }
+        .cv { position: relative; height: 320px; width: 100%; }
+        
+        .table-container { overflow-x: auto; margin-bottom: 16px; border: 1px solid var(--ink); border-radius: 4px; background: #fff;}
+        .excel-table { border-collapse: collapse; width: 100%; min-width: 1200px; font-size: 13px; text-align: center; }
+        .excel-table th, .excel-table td { border: 1px solid var(--ink); padding: 6px; }
+        .excel-table tbody tr { height: 54px; }
+        .excel-table thead tr.title-row th { background-color: var(--tb-blue); font-weight: bold; font-size: 15px; padding: 8px;}
+        .excel-table thead tr.header-row th { background-color: var(--tb-green); font-weight: normal; }
+        .excel-table td.desc { text-align: left; line-height: 1.5; }
+    </style>
+</head>
+<body>
+
+<div class="wrap" id="mainDashboard">
+    <header>
+        <div>
+            <h1>4小时 QC 检验情况汇总 <span style="font-size: 14px; color: var(--ink3); font-weight: normal;">| QC 4-Hour Inspection Summary</span></h1>
+            <div class="sub" id="reportDate">Status: Waiting for Data Upload...</div>
+        </div>
+        <div class="controls">
+            <label class="upload-btn">
+                📊 Upload MES Export (Excel/CSV)
+                <input type="file" id="mesFileUpload" accept=".xlsx,.xls,.csv" style="display: none;">
+            </label>
+            <div class="seg" id="lineToggles">
+                <input type="checkbox" id="cb_W1" value="W1"><label for="cb_W1">W1</label>
+                <input type="checkbox" id="cb_W2" value="W2"><label for="cb_W2">W2</label>
+                <input type="checkbox" id="cb_W3" value="W3"><label for="cb_W3">W3</label>
+                <input type="checkbox" id="cb_W4" value="W4"><label for="cb_W4">W4</label>
+                <input type="checkbox" id="cb_W5" value="W5"><label for="cb_W5">W5</label>
+                <input type="checkbox" id="cb_W6" value="W6"><label for="cb_W6">W6</label>
+                <input type="checkbox" id="cb_W7" value="W7"><label for="cb_W7">W7</label>
+                <input type="checkbox" id="cb_W8" value="W8"><label for="cb_W8">W8</label>
+            </div>
+        </div>
+        <div style="width: 100%; border-top: 1px solid var(--line); padding-top: 12px; display: flex; align-items: center; gap: 10px;">
+            <label for="dateSelector" style="font-size: 14px; font-weight: 600;">Select Report Date (选择报表日期): </label>
+            <select id="dateSelector" class="date-picker">
+                <option value="">No Dates Available</option>
+            </select>
+        </div>
+    </header>
+
+    <div style="display: flex; justify-content: flex-end; gap: 10px;">
+        <button id="exportExcelBtn" class="upload-btn" style="display: none; background: #17673f; border-color: #17673f; color: #fff;">
+            📊 Download Excel (下载Excel)
+        </button>
+        <button id="shareTableBtn" class="upload-btn" style="display: none; background: #2a78d6; border-color: #2a78d6; color: #fff;">
+            📤 Share / Save Image (Mobile/手机版)
+        </button>
+        <button id="copyTableBtn" class="upload-btn" style="display: none; background: #fff; border-color: #2a78d6; color: #2a78d6;">
+            📋 Copy (PC/电脑版)
+        </button>
+    </div>
+
+    <div id="tablesWrapper" style="padding: 10px; background: var(--bg); margin: -10px;"></div>
+
+    <div class="grid">
+        <div class="card">
+            <h2>4-Hour Interval Defect Trend (4小时不良趋势) - Aggregated</h2>
+            <div class="cv"><canvas id="trendChart"></canvas></div>
+        </div>
+        <div class="card">
+            <h2>Top Defects Pareto (不良排行) - Aggregated</h2>
+            <div class="cv"><canvas id="paretoChart"></canvas></div>
+        </div>
+    </div>
+</div>
+
+<script id="qc-data" type="application/json">
+{
+    "dates": [],
+    "intervals": ["08:00-12:00", "12:00-16:00", "16:00-20:00", "20:00-00:00", "00:00-04:00", "04:00-08:00"],
+    "data_by_date": {}
+}
+</script>
+
+<script>
+    let globalStore = JSON.parse(document.getElementById('qc-data').textContent);
+    const colors = ['#e87ba4', '#eb6834', '#eda100', '#1baf7a', '#2a78d6', '#4a3aa7', '#6b6a64'];
+    let trendChartInstance = null;
+    let paretoChartInstance = null;
+    let processedBarcodes = new Set();
+
+    function parseMESData(dataArray) {
+        dataArray.forEach(rawRow => {
+            const row = {};
+            for (let k in rawRow) row[k.trim()] = rawRow[k];
+            
+            let line = row['Production Line'];
+            let timeStr = row['Cut Film Time'];
+            let barcode = row['Large cut labels'] || (row['Scan label'] ? row['Scan label'] + '_' + row['work station'] : row['Document No.']);
+            
+            if (!line || !timeStr || !barcode) return;
+            if (processedBarcodes.has(barcode)) return;
+            
+            processedBarcodes.add(barcode);
+            
+            let dateObj = new Date(timeStr.replace(/-/g, '/'));
+            if (isNaN(dateObj.getTime())) return;
+            
+            let hour = dateObj.getHours();
+            let intervalIndex = 0;
+            if (hour >= 8 && hour < 12) intervalIndex = 0;
+            else if (hour >= 12 && hour < 16) intervalIndex = 1;
+            else if (hour >= 16 && hour < 20) intervalIndex = 2;
+            else if (hour >= 20 && hour < 24) intervalIndex = 3;
+            else if (hour >= 0 && hour < 4) intervalIndex = 4;
+            else if (hour >= 4 && hour < 8) intervalIndex = 5;
+            
+            let reportDateObj = new Date(dateObj);
+            if (hour < 8) reportDateObj.setDate(reportDateObj.getDate() - 1);
+            
+            let rDate = `${reportDateObj.getFullYear()}-${String(reportDateObj.getMonth()+1).padStart(2,'0')}-${String(reportDateObj.getDate()).padStart(2,'0')}`;
+            
+            if (!globalStore.data_by_date[rDate]) {
+                globalStore.data_by_date[rDate] = {};
+                if (!globalStore.dates.includes(rDate)) {
+                    globalStore.dates.push(rDate);
+                }
+            }
+            
+            let dayData = globalStore.data_by_date[rDate];
+            
+            if (!dayData[line]) {
+                dayData[line] = {
+                    model: row['Specification'] || row['Model'] || "",
+                    shifts: Array.from({length: 6}, () => ({ total: 0, a: 0, n: 0, f: 0, defects: {} }))
+                };
+            }
+            
+            let shiftData = dayData[line].shifts[intervalIndex];
+            shiftData.total += 1;
+            
+            let comp = String(row['Comprehensive inspection'] || '').trim();
+            if (comp === 'A') shiftData.a += 1;
+            else if (comp === '注意') shiftData.n += 1;
+            else if (comp === 'F') shiftData.f += 1;
+            
+            if (comp === '注意' || comp === 'F') {
+                let def1 = row['The main defects in the appearance of large slitting'];
+                let def2 = row['The appearance of the quality inspection instrument is mainly defective'];
+                
+                const addDefect = (desc) => {
+                    if (desc && typeof desc === 'string' && desc.trim() !== '') {
+                        let nDef = desc.trim().charAt(0).toUpperCase() + desc.trim().slice(1).toLowerCase();
+                        shiftData.defects[nDef] = (shiftData.defects[nDef] || 0) + 1;
+                    }
+                };
+                addDefect(def1);
+                addDefect(def2);
+            }
+        });
+        
+        globalStore.dates.sort((a, b) => new Date(b) - new Date(a));
+    }
+
+    document.getElementById('mesFileUpload').addEventListener('change', function(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        
+        document.getElementById('reportDate').textContent = "Status: Parsing Excel file...";
+        
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, {type: 'array'});
+                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                const jsonData = XLSX.utils.sheet_to_json(firstSheet);
+                
+                parseMESData(jsonData);
+                
+                const dateSelector = document.getElementById('dateSelector');
+                dateSelector.innerHTML = '';
+                globalStore.dates.forEach(d => {
+                    dateSelector.insertAdjacentHTML('beforeend', `<option value="${d}">${d}</option>`);
+                });
+                
+                if(globalStore.dates.length > 0) {
+                    dateSelector.value = globalStore.dates[0];
+                }
+                
+                renderDashboard();
+            } catch (error) {
+                console.error(error);
+                alert('Error processing the file. Please ensure it is a standard MES Excel export.');
+                document.getElementById('reportDate').textContent = "Status: Error parsing file.";
+            }
+        };
+        reader.readAsArrayBuffer(file);
+        event.target.value = ''; 
+    });
+    
+    document.getElementById('dateSelector').addEventListener('change', renderDashboard);
+
+    function generateTableHTML(line, lineData, selectedDate) {
+        if (!lineData) return '';
+        const intervals = globalStore.intervals;
+        
+        let rowsHtml = '';
+        lineData.shifts.forEach((shift, index) => {
+            const time = intervals[index];
+            
+            let desc = Object.entries(shift.defects)
+                .sort((a, b) => b[1] - a[1])
+                .map(([k, v]) => `${k}(${v})`)
+                .join(', ');
+            
+            if (shift.total > 0 && desc === '') {
+                desc = '-';
+            }
+                
+            const aGradeRate = shift.total > 0 ? ((shift.a / shift.total) * 100).toFixed(2) + '%' : '';
+            const dateCell = index === 0 ? `<td rowspan="6">${selectedDate}</td>` : '';
+            
+            rowsHtml += `<tr>
+                ${dateCell}
+                <td>${time}</td>
+                <td>${shift.total > 0 ? lineData.model : ''}</td>
+                <td>${shift.total || ''}</td>
+                <td>${shift.total > 0 ? shift.a : ''}</td>
+                <td>${shift.total > 0 ? shift.n : ''}</td>
+                <td>${shift.total > 0 ? shift.f : ''}</td>
+                <td>${aGradeRate}</td>
+                <td class="desc">${desc}</td>
+            </tr>`;
+        });
+
+        return `
+        <div class="table-container">
+            <table class="excel-table">
+                <thead>
+                    <tr class="title-row"><th colspan="9">${line} 检验情况汇总 (Inspection Summary)</th></tr>
+                    <tr class="header-row">
+                        <th>日期<br>Date</th><th>时间<br>Time</th><th>型号<br>Model</th>
+                        <th>总产出<br>Total Output</th><th>A</th><th>注意<br>Attention</th><th>F</th>
+                        <th>A品率 (%)<br>Peratusan A grade</th><th style="width: 50%;">判注意描述 Attention Abnormality Description</th>
+                    </tr>
+                </thead>
+                <tbody>${rowsHtml}</tbody>
+            </table>
+        </div>`;
+    }
+
+    function renderDashboard() {
+        const selectedDate = document.getElementById('dateSelector').value;
+        if(!selectedDate) {
+            document.getElementById('reportDate').textContent = "Status: Waiting for Data Upload...";
+            return;
+        }
+        
+        document.getElementById('reportDate').textContent = "Date: " + selectedDate;
+        
+        const activeData = globalStore.data_by_date[selectedDate] || {};
+        const checkboxes = document.querySelectorAll('#lineToggles input[type="checkbox"]');
+        const selectedLines = Array.from(checkboxes).filter(cb => cb.checked).map(cb => cb.value);
+
+        const tablesWrapper = document.getElementById('tablesWrapper');
+        const copyBtn = document.getElementById('copyTableBtn');
+        const shareBtn = document.getElementById('shareTableBtn');
+        const excelBtn = document.getElementById('exportExcelBtn');
+        tablesWrapper.innerHTML = '';
+        
+        let hasData = false;
+
+        selectedLines.forEach(line => {
+            if (activeData[line]) {
+                tablesWrapper.insertAdjacentHTML('beforeend', generateTableHTML(line, activeData[line], selectedDate));
+                hasData = true;
+            }
+        });
+        
+        if (!hasData) {
+            tablesWrapper.innerHTML = '<p style="color: var(--ink3); text-align: center; padding: 20px;">No data available for the selected date and workstation combination.</p>';
+            copyBtn.style.display = 'none';
+            shareBtn.style.display = 'none';
+            excelBtn.style.display = 'none';
+            if(trendChartInstance) trendChartInstance.destroy();
+            if(paretoChartInstance) paretoChartInstance.destroy();
+            return;
+        }
+
+        copyBtn.style.display = 'inline-block';
+        shareBtn.style.display = 'inline-block';
+        excelBtn.style.display = 'inline-block';
+
+        const defectMap = {};
+        selectedLines.forEach(line => {
+            const lineData = activeData[line];
+            if (lineData) {
+                lineData.shifts.forEach((shift, index) => {
+                    Object.entries(shift.defects).forEach(([defect, count]) => {
+                        if (!defectMap[defect]) defectMap[defect] = [0, 0, 0, 0, 0, 0];
+                        defectMap[defect][index] += count; 
+                    });
+                });
+            }
+        });
+
+        const datasets = Object.keys(defectMap).map((name, index) => ({
+            label: name,
+            data: defectMap[name],
+            backgroundColor: colors[index % colors.length],
+            stack: 'Stack 0'
+        }));
+
+        if (trendChartInstance) trendChartInstance.destroy();
+        const ctxTrend = document.getElementById('trendChart').getContext('2d');
+        trendChartInstance = new Chart(ctxTrend, {
+            type: 'bar',
+            data: { labels: globalStore.intervals, datasets: datasets },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { position: 'top' } },
+                scales: { y: { beginAtZero: true, title: { display: true, text: 'Aggregated Defect Count' } } }
+            }
+        });
+
+        let totals = Object.keys(defectMap).map(name => ({
+            name: name,
+            total: defectMap[name].reduce((a, b) => a + b, 0)
+        })).sort((a, b) => b.total - a.total);
+
+        let cumulative = 0;
+        const totalDefects = totals.reduce((sum, item) => sum + item.total, 0);
+        const paretoData = totals.map(item => item.total);
+        const paretoLine = totals.map(item => {
+            cumulative += item.total;
+            return (cumulative / (totalDefects || 1)) * 100;
+        });
+
+        if (paretoChartInstance) paretoChartInstance.destroy();
+        const ctxPareto = document.getElementById('paretoChart').getContext('2d');
+        paretoChartInstance = new Chart(ctxPareto, {
+            type: 'bar',
+            data: {
+                labels: totals.map(item => item.name),
+                datasets: [
+                    { type: 'line', label: 'Cumulative %', data: paretoLine, borderColor: '#141413', backgroundColor: '#141413', yAxisID: 'y1', tension: 0.1, fill: false },
+                    { type: 'bar', label: 'Defect Count', data: paretoData, backgroundColor: '#eda100', yAxisID: 'y' }
+                ]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                scales: {
+                    y: { beginAtZero: true, position: 'left' },
+                    y1: { beginAtZero: true, max: 100, position: 'right', grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%' } }
+                }
+            }
+        });
+    }
+
+    async function captureFullTables() {
+        const target = document.getElementById('tablesWrapper');
+        const printContainer = document.createElement('div');
+        printContainer.style.position = 'absolute';
+        printContainer.style.top = '-9999px';
+        printContainer.style.left = '0';
+        printContainer.style.width = '1400px'; 
+        printContainer.style.background = '#f1f1ee';
+        printContainer.style.padding = '20px';
+        printContainer.style.zIndex = '-1';
+        
+        const clone = target.cloneNode(true);
+        clone.style.margin = '0';
+        
+        const scrollableContainers = clone.querySelectorAll('.table-container');
+        scrollableContainers.forEach(c => {
+            c.style.overflow = 'visible'; 
+            c.style.width = '100%';
+            c.style.border = 'none'; 
+            c.style.marginBottom = '20px';
+        });
+        
+        const tables = clone.querySelectorAll('.excel-table');
+        tables.forEach(t => {
+            t.style.width = '100%';
+            t.style.minWidth = '1200px'; 
+            t.style.border = '1px solid #141413'; 
+        });
+
+        printContainer.appendChild(clone);
+        document.body.appendChild(printContainer);
+        
+        try {
+            const canvas = await html2canvas(printContainer, { 
+                scale: 2, 
+                backgroundColor: '#f1f1ee',
+                windowWidth: 1400
+            });
+            return canvas;
+        } finally {
+            document.body.removeChild(printContainer); 
+        }
+    }
+
+    document.getElementById('copyTableBtn').addEventListener('click', async function() {
+        const btn = this;
+        const originalText = btn.textContent;
+        btn.textContent = '📸 Copying...';
+        try {
+            const canvas = await captureFullTables();
+            canvas.toBlob(async function(blob) {
+                try {
+                    const item = new ClipboardItem({ "image/png": blob });
+                    await navigator.clipboard.write([item]);
+                    btn.textContent = '✅ Copied to Clipboard!';
+                    setTimeout(() => btn.textContent = originalText, 2000);
+                } catch (err) {
+                    console.error('Clipboard write failed.', err);
+                    btn.textContent = '❌ Failed to copy (Use Mobile Button Instead)';
+                    setTimeout(() => btn.textContent = originalText, 2500);
+                }
+            });
+        } catch(e) {
+            console.error('html2canvas failed', e);
+            btn.textContent = '❌ Error generating image';
+            setTimeout(() => btn.textContent = originalText, 2000);
+        }
+    });
+
+    document.getElementById('shareTableBtn').addEventListener('click', async function() {
+        const btn = this;
+        const originalText = btn.textContent;
+        btn.textContent = '📸 Generating...';
+        const reportDate = document.getElementById('dateSelector').value || "Report";
+        
+        try {
+            const canvas = await captureFullTables();
+            canvas.toBlob(async function(blob) {
+                try {
+                    const fileName = `QC_Report_${reportDate}.png`;
+                    const file = new File([blob], fileName, { type: "image/png" });
+                    
+                    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                        await navigator.share({
+                            files: [file],
+                            title: 'QC 4-Hour Report',
+                            text: `QC Inspection Report for ${reportDate}`
+                        });
+                        btn.textContent = '✅ Shared!';
+                    } else {
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = fileName;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                        btn.textContent = '✅ Downloaded!';
+                    }
+                    setTimeout(() => btn.textContent = originalText, 2500);
+                } catch (err) {
+                    console.error('Share/Download failed.', err);
+                    btn.textContent = '❌ Action failed';
+                    setTimeout(() => btn.textContent = originalText, 2500);
+                }
+            }, "image/png");
+        } catch(e) {
+            console.error('html2canvas failed', e);
+            btn.textContent = '❌ Error';
+            setTimeout(() => btn.textContent = originalText, 2000);
+        }
+    });
+
+    // Excel Export
+    document.getElementById('exportExcelBtn').addEventListener('click', function() {
+        const btn = this;
+        const originalText = btn.textContent;
+        btn.textContent = '📊 Exporting...';
+        
+        try {
+            const selectedDate = document.getElementById('dateSelector').value || "Report";
+            const wb = XLSX.utils.book_new();
+            
+            const activeData = globalStore.data_by_date[selectedDate] || {};
+            const checkboxes = document.querySelectorAll('#lineToggles input[type="checkbox"]');
+            const selectedLines = Array.from(checkboxes).filter(cb => cb.checked).map(cb => cb.value);
+
+            const borderAll = {
+                top: { style: "thin", color: { rgb: "000000" } },
+                bottom: { style: "thin", color: { rgb: "000000" } },
+                left: { style: "thin", color: { rgb: "000000" } },
+                right: { style: "thin", color: { rgb: "000000" } }
+            };
+
+            selectedLines.forEach(line => {
+                if (!activeData[line]) return;
+                const lineData = activeData[line];
+                let ws_data = [];
+                
+                let titleRow = [];
+                for(let i = 0; i < 9; i++) {
+                    titleRow.push({
+                        v: i === 0 ? `${line} 检验情况汇总 (Inspection Summary)` : "",
+                        s: { 
+                            fill: { fgColor: { rgb: "9BC2E6" } }, 
+                            font: { bold: true, sz: 12 }, 
+                            alignment: { horizontal: "center", vertical: "center" }, 
+                            border: borderAll 
+                        }
+                    });
+                }
+                ws_data.push(titleRow);
+
+                let headers = [
+                    "日期\nDate", 
+                    "时间\nTime", 
+                    "型号\nModel", 
+                    "总产出\nTotal Output", 
+                    "A", 
+                    "注意\nAttention", 
+                    "F", 
+                    "A品率 (%)\nPeratusan A grade", 
+                    "判注意描述 Attention Abnormality Description"
+                ];
+                let headerRow = headers.map(h => ({
+                    v: h, 
+                    s: { 
+                        fill: { fgColor: { rgb: "A9D08E" } }, 
+                        alignment: { horizontal: "center", vertical: "center", wrapText: true }, 
+                        border: borderAll 
+                    }
+                }));
+                ws_data.push(headerRow);
+
+                lineData.shifts.forEach((shift, index) => {
+                    const time = globalStore.intervals[index];
+                    let desc = Object.entries(shift.defects).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k}(${v})`).join(', ');
+                    if (shift.total > 0 && desc === '') desc = '-';
+                    
+                    const aGradeRate = shift.total > 0 ? (shift.a / shift.total) : "";
+                    const dateCell = index === 0 ? selectedDate : "";
+                    
+                    let dataArray = [
+                        dateCell, time, shift.total > 0 ? lineData.model : "", 
+                        shift.total || "", shift.total > 0 ? shift.a : "", 
+                        shift.total > 0 ? shift.n : "", shift.total > 0 ? shift.f : "", 
+                        aGradeRate, desc
+                    ];
+                    
+                    let formattedRow = dataArray.map((val, cIdx) => {
+                        let cell = { 
+                            v: val, 
+                            s: { alignment: { horizontal: "center", vertical: "center", wrapText: true }, border: borderAll } 
+                        };
+                        if (cIdx === 7 && typeof val === 'number') {
+                            cell.t = 'n';
+                            cell.z = "0.00%";
+                        }
+                        if (cIdx === 8) {
+                            cell.s.alignment.horizontal = "left";
+                        }
+                        return cell;
+                    });
+                    ws_data.push(formattedRow);
+                });
+
+                const ws = XLSX.utils.aoa_to_sheet(ws_data);
+                
+                ws['!merges'] = [
+                    { s: {r: 0, c: 0}, e: {r: 0, c: 8} }, 
+                    { s: {r: 2, c: 0}, e: {r: 7, c: 0} }  
+                ];
+                
+                ws['!cols'] = [
+                    { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 15 }, 
+                    { wch: 8 }, { wch: 12 }, { wch: 8 }, { wch: 18 }, { wch: 100 }  
+                ];
+
+                ws['!rows'] = [
+                    { hpx: 30 }, 
+                    { hpx: 40 }, 
+                    { hpx: 54 }, 
+                    { hpx: 54 }, 
+                    { hpx: 54 }, 
+                    { hpx: 54 }, 
+                    { hpx: 54 }, 
+                    { hpx: 54 }  
+                ];
+
+                XLSX.utils.book_append_sheet(wb, ws, line);
+            });
+
+            XLSX.writeFile(wb, `QC_Report_${selectedDate}.xlsx`);
+            btn.textContent = '✅ Downloaded!';
+            setTimeout(() => btn.textContent = originalText, 2500);
+        } catch (error) {
+            console.error(error);
+            btn.textContent = '❌ Export Failed';
+            setTimeout(() => btn.textContent = originalText, 2500);
+        }
+    });
+
+    document.querySelectorAll('#lineToggles input').forEach(cb => {
+        cb.addEventListener('change', renderDashboard);
+    });
+    renderDashboard();
+</script>
+
+</body>
+</html>
