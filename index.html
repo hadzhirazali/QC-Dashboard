@@ -174,7 +174,7 @@
             else if (comp === '注意') shiftData.n += 1;
             else if (comp === 'F') shiftData.f += 1;
             
-            if (comp === '注意' || comp === 'F') {
+            if (comp === '注意') {
                 let def1 = row['The main defects in the appearance of large slitting'];
                 let def2 = row['The appearance of the quality inspection instrument is mainly defective'];
                 
@@ -244,21 +244,23 @@
                 .map(([k, v]) => `${k}(${v})`)
                 .join(', ');
             
-            if (shift.total > 0 && desc === '') {
+            if (desc === '') {
                 desc = '-';
             }
                 
-            const aGradeRate = shift.total > 0 ? ((shift.a / shift.total) * 100).toFixed(2) + '%' : '';
+            // Display 0.00% instead of blank if total is 0
+            const aGradeRate = shift.total > 0 ? ((shift.a / shift.total) * 100).toFixed(2) + '%' : '0.00%';
             const dateCell = index === 0 ? `<td rowspan="6">${selectedDate}</td>` : '';
             
+            // Replaced conditional blanks with explicit zero printing
             rowsHtml += `<tr>
                 ${dateCell}
                 <td>${time}</td>
                 <td>${shift.total > 0 ? lineData.model : ''}</td>
-                <td>${shift.total || ''}</td>
-                <td>${shift.total > 0 ? shift.a : ''}</td>
-                <td>${shift.total > 0 ? shift.n : ''}</td>
-                <td>${shift.total > 0 ? shift.f : ''}</td>
+                <td>${shift.total}</td>
+                <td>${shift.a}</td>
+                <td>${shift.n}</td>
+                <td>${shift.f}</td>
                 <td>${aGradeRate}</td>
                 <td class="desc">${desc}</td>
             </tr>`;
@@ -566,15 +568,17 @@
                 lineData.shifts.forEach((shift, index) => {
                     const time = globalStore.intervals[index];
                     let desc = Object.entries(shift.defects).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k}(${v})`).join(', ');
-                    if (shift.total > 0 && desc === '') desc = '-';
+                    if (desc === '') desc = '-';
                     
-                    const aGradeRate = shift.total > 0 ? (shift.a / shift.total) : "";
+                    // Display explicit zero percentage if total is 0
+                    const aGradeRate = shift.total > 0 ? (shift.a / shift.total) : 0;
                     const dateCell = index === 0 ? selectedDate : "";
                     
+                    // Replace blanks with explicit zeros
                     let dataArray = [
                         dateCell, time, shift.total > 0 ? lineData.model : "", 
-                        shift.total || "", shift.total > 0 ? shift.a : "", 
-                        shift.total > 0 ? shift.n : "", shift.total > 0 ? shift.f : "", 
+                        shift.total, shift.a, 
+                        shift.n, shift.f, 
                         aGradeRate, desc
                     ];
                     
