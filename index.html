@@ -125,15 +125,29 @@
             for (let k in rawRow) row[k.trim()] = rawRow[k];
             
             let line = row['Production Line'];
-            let timeStr = row['Cut Film Time'];
+            let timeRaw = row['Cut Film Time'];
             let barcode = row['Large cut labels'] || (row['Scan label'] ? row['Scan label'] + '_' + row['work station'] : row['Document No.']);
             
-            if (!line || !timeStr || !barcode) return;
+            if (!line || !timeRaw || !barcode) return;
             if (processedBarcodes.has(barcode)) return;
             
             processedBarcodes.add(barcode);
             
-            let dateObj = new Date(timeStr.replace(/-/g, '/'));
+            let dateObj;
+            // FIXED THE TIMEZONE BUG: Read exact Excel time from UTC properties to prevent +8 hour shifts in Malaysia
+            if (timeRaw instanceof Date) {
+                dateObj = new Date(timeRaw.getUTCFullYear(), timeRaw.getUTCMonth(), timeRaw.getUTCDate(), timeRaw.getUTCHours(), timeRaw.getUTCMinutes(), timeRaw.getUTCSeconds());
+            } else {
+                let timeStr = String(timeRaw || '').trim();
+                // Check if DD/MM/YYYY
+                if (/^\d{2}[\/\-]\d{2}[\/\-]\d{4}/.test(timeStr)) {
+                    let parts = timeStr.split(' ')[0].split(/[\/\-]/);
+                    let timePart = timeStr.split(' ')[1] || '00:00:00';
+                    timeStr = `${parts[2]}/${parts[1]}/${parts[0]} ${timePart}`;
+                }
+                dateObj = new Date(timeStr.replace(/-/g, '/'));
+            }
+            
             if (isNaN(dateObj.getTime())) return;
             
             let hour = dateObj.getHours();
@@ -145,6 +159,7 @@
             else if (hour >= 0 && hour < 4) intervalIndex = 4;
             else if (hour >= 4 && hour < 8) intervalIndex = 5;
             
+            // EXACT SHIFT LOGIC: 08:00 AM to 08:00 AM Next Day
             let reportDateObj = new Date(dateObj);
             if (hour < 8) reportDateObj.setDate(reportDateObj.getDate() - 1);
             
@@ -202,9 +217,9 @@
         reader.onload = function(e) {
             try {
                 const data = new Uint8Array(e.target.result);
-                const workbook = XLSX.read(data, {type: 'array'});
+                const workbook = XLSX.read(data, {type: 'array', cellDates: true});
                 const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-                const jsonData = XLSX.utils.sheet_to_json(firstSheet);
+                const jsonData = XLSX.utils.sheet_to_json(firstSheet, { defval: "" });
                 
                 parseMESData(jsonData);
                 
@@ -248,11 +263,9 @@
                 desc = '-';
             }
                 
-            // Display 0.00% instead of blank if total is 0
             const aGradeRate = shift.total > 0 ? ((shift.a / shift.total) * 100).toFixed(2) + '%' : '0.00%';
             const dateCell = index === 0 ? `<td rowspan="6">${selectedDate}</td>` : '';
             
-            // Replaced conditional blanks with explicit zero printing
             rowsHtml += `<tr>
                 ${dateCell}
                 <td>${time}</td>
@@ -570,11 +583,9 @@
                     let desc = Object.entries(shift.defects).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k}(${v})`).join(', ');
                     if (desc === '') desc = '-';
                     
-                    // Display explicit zero percentage if total is 0
                     const aGradeRate = shift.total > 0 ? (shift.a / shift.total) : 0;
                     const dateCell = index === 0 ? selectedDate : "";
                     
-                    // Replace blanks with explicit zeros
                     let dataArray = [
                         dateCell, time, shift.total > 0 ? lineData.model : "", 
                         shift.total, shift.a, 
