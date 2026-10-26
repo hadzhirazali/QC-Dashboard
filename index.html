@@ -37,7 +37,7 @@
         .card h2 { margin: 0; font-size: 16px; font-weight: 600; border-bottom: 1px solid var(--line); padding-bottom: 10px; }
         .cv { position: relative; height: 320px; width: 100%; }
         
-        .table-container { overflow-x: auto; margin-bottom: 16px; border: 1px solid var(--ink); border-radius: 4px; background: #fff;}
+        .table-container { overflow-x: auto; border: 1px solid var(--ink); border-radius: 4px; background: #fff;}
         .excel-table { border-collapse: collapse; width: 100%; min-width: 1200px; font-size: 13px; text-align: center; }
         .excel-table th, .excel-table td { border: 1px solid var(--ink); padding: 6px; }
         .excel-table tbody tr { height: 54px; }
@@ -78,30 +78,37 @@
         </div>
     </header>
 
+    <!-- Table Action Buttons (Top) -->
     <div style="display: flex; justify-content: flex-end; gap: 10px;">
         <button id="exportExcelBtn" class="upload-btn" style="display: none; background: #17673f; border-color: #17673f; color: #fff;">
             📊 Download Excel (下载Excel)
         </button>
         <button id="shareTableBtn" class="upload-btn" style="display: none; background: #2a78d6; border-color: #2a78d6; color: #fff;">
-            📤 Share / Save Image (Mobile/手机版)
+            📤 Share Tables Image (Mobile)
         </button>
         <button id="copyTableBtn" class="upload-btn" style="display: none; background: #fff; border-color: #2a78d6; color: #2a78d6;">
-            📋 Copy (PC/电脑版)
+            📋 Copy Tables (PC)
         </button>
     </div>
 
+    <!-- ALL Tables go here -->
     <div id="tablesWrapper" style="padding: 10px; background: var(--bg); margin: -10px;"></div>
 
-    <div class="grid">
-        <div class="card">
-            <h2>4-Hour Interval Defect Trend (4小时不良趋势) - Aggregated</h2>
-            <div class="cv"><canvas id="trendChart"></canvas></div>
-        </div>
-        <div class="card">
-            <h2>Top Defects Pareto (不良排行) - Aggregated</h2>
-            <div class="cv"><canvas id="paretoChart"></canvas></div>
-        </div>
+    <!-- Chart Action Buttons (Middle) -->
+    <div id="chartActions" style="display: none; justify-content: flex-end; gap: 10px; margin-top: 20px; border-top: 2px dashed var(--line); padding-top: 20px;">
+        <button id="exportExcelBtn2" class="upload-btn" style="background: #17673f; border-color: #17673f; color: #fff;">
+            📊 Download Excel (下载Excel)
+        </button>
+        <button id="shareChartBtn" class="upload-btn" style="background: #2a78d6; border-color: #2a78d6; color: #fff;">
+            📤 Share Charts Image (Mobile)
+        </button>
+        <button id="copyChartBtn" class="upload-btn" style="background: #fff; border-color: #2a78d6; color: #2a78d6;">
+            📋 Copy Charts (PC)
+        </button>
     </div>
+
+    <!-- ALL Charts go here -->
+    <div id="chartsWrapper" style="padding: 10px; background: var(--bg); margin: -10px;"></div>
 </div>
 
 <script id="qc-data" type="application/json">
@@ -115,8 +122,7 @@
 <script>
     let globalStore = JSON.parse(document.getElementById('qc-data').textContent);
     const colors = ['#e87ba4', '#eb6834', '#eda100', '#1baf7a', '#2a78d6', '#4a3aa7', '#6b6a64'];
-    let trendChartInstance = null;
-    let paretoChartInstance = null;
+    let chartInstances = [];
     let processedBarcodes = new Set();
 
     function parseMESData(dataArray) {
@@ -134,12 +140,10 @@
             processedBarcodes.add(barcode);
             
             let dateObj;
-            // FIXED THE TIMEZONE BUG: Read exact Excel time from UTC properties to prevent +8 hour shifts in Malaysia
             if (timeRaw instanceof Date) {
                 dateObj = new Date(timeRaw.getUTCFullYear(), timeRaw.getUTCMonth(), timeRaw.getUTCDate(), timeRaw.getUTCHours(), timeRaw.getUTCMinutes(), timeRaw.getUTCSeconds());
             } else {
                 let timeStr = String(timeRaw || '').trim();
-                // Check if DD/MM/YYYY
                 if (/^\d{2}[\/\-]\d{2}[\/\-]\d{4}/.test(timeStr)) {
                     let parts = timeStr.split(' ')[0].split(/[\/\-]/);
                     let timePart = timeStr.split(' ')[1] || '00:00:00';
@@ -159,7 +163,6 @@
             else if (hour >= 0 && hour < 4) intervalIndex = 4;
             else if (hour >= 4 && hour < 8) intervalIndex = 5;
             
-            // EXACT SHIFT LOGIC: 08:00 AM to 08:00 AM Next Day
             let reportDateObj = new Date(dateObj);
             if (hour < 8) reportDateObj.setDate(reportDateObj.getDate() - 1);
             
@@ -280,7 +283,7 @@
         });
 
         return `
-        <div class="table-container">
+        <div class="table-container" style="margin-bottom: 24px;">
             <table class="excel-table">
                 <thead>
                     <tr class="title-row"><th colspan="9">${line} 检验情况汇总 (Inspection Summary)</th></tr>
@@ -292,6 +295,20 @@
                 </thead>
                 <tbody>${rowsHtml}</tbody>
             </table>
+        </div>`;
+    }
+
+    function generateChartsHTML(line) {
+        return `
+        <div class="grid" style="margin-bottom: 24px;">
+            <div class="card">
+                <h2>${line} - 4-Hour Interval Defect Trend (4小时不良趋势)</h2>
+                <div class="cv"><canvas id="trendChart_${line}"></canvas></div>
+            </div>
+            <div class="card">
+                <h2>${line} - Top Defects Pareto (不良排行)</h2>
+                <div class="cv"><canvas id="paretoChart_${line}"></canvas></div>
+            </div>
         </div>`;
     }
 
@@ -309,16 +326,27 @@
         const selectedLines = Array.from(checkboxes).filter(cb => cb.checked).map(cb => cb.value);
 
         const tablesWrapper = document.getElementById('tablesWrapper');
+        const chartsWrapper = document.getElementById('chartsWrapper');
+        const chartActions = document.getElementById('chartActions');
+        
         const copyBtn = document.getElementById('copyTableBtn');
         const shareBtn = document.getElementById('shareTableBtn');
         const excelBtn = document.getElementById('exportExcelBtn');
+        
+        // Destroy existing charts to prevent memory leaks
+        chartInstances.forEach(chart => chart.destroy());
+        chartInstances = [];
+        
         tablesWrapper.innerHTML = '';
+        chartsWrapper.innerHTML = '';
         
         let hasData = false;
 
+        // Step 1: Render ALL tables first
         selectedLines.forEach(line => {
             if (activeData[line]) {
                 tablesWrapper.insertAdjacentHTML('beforeend', generateTableHTML(line, activeData[line], selectedDate));
+                chartsWrapper.insertAdjacentHTML('beforeend', generateChartsHTML(line));
                 hasData = true;
             }
         });
@@ -328,83 +356,87 @@
             copyBtn.style.display = 'none';
             shareBtn.style.display = 'none';
             excelBtn.style.display = 'none';
-            if(trendChartInstance) trendChartInstance.destroy();
-            if(paretoChartInstance) paretoChartInstance.destroy();
+            chartActions.style.display = 'none';
             return;
         }
 
         copyBtn.style.display = 'inline-block';
         shareBtn.style.display = 'inline-block';
         excelBtn.style.display = 'inline-block';
+        chartActions.style.display = 'flex';
 
-        const defectMap = {};
+        // Step 2: Render ALL Charts
         selectedLines.forEach(line => {
             const lineData = activeData[line];
-            if (lineData) {
-                lineData.shifts.forEach((shift, index) => {
-                    Object.entries(shift.defects).forEach(([defect, count]) => {
-                        if (!defectMap[defect]) defectMap[defect] = [0, 0, 0, 0, 0, 0];
-                        defectMap[defect][index] += count; 
-                    });
+            if (!lineData) return;
+
+            const defectMap = {};
+            lineData.shifts.forEach((shift, index) => {
+                Object.entries(shift.defects).forEach(([defect, count]) => {
+                    if (!defectMap[defect]) defectMap[defect] = [0, 0, 0, 0, 0, 0];
+                    defectMap[defect][index] += count; 
                 });
-            }
-        });
+            });
 
-        const datasets = Object.keys(defectMap).map((name, index) => ({
-            label: name,
-            data: defectMap[name],
-            backgroundColor: colors[index % colors.length],
-            stack: 'Stack 0'
-        }));
+            const datasets = Object.keys(defectMap).map((name, index) => ({
+                label: name,
+                data: defectMap[name],
+                backgroundColor: colors[index % colors.length],
+                stack: 'Stack 0'
+            }));
 
-        if (trendChartInstance) trendChartInstance.destroy();
-        const ctxTrend = document.getElementById('trendChart').getContext('2d');
-        trendChartInstance = new Chart(ctxTrend, {
-            type: 'bar',
-            data: { labels: globalStore.intervals, datasets: datasets },
-            options: {
-                responsive: true, maintainAspectRatio: false,
-                plugins: { legend: { position: 'top' } },
-                scales: { y: { beginAtZero: true, title: { display: true, text: 'Aggregated Defect Count' } } }
-            }
-        });
-
-        let totals = Object.keys(defectMap).map(name => ({
-            name: name,
-            total: defectMap[name].reduce((a, b) => a + b, 0)
-        })).sort((a, b) => b.total - a.total);
-
-        let cumulative = 0;
-        const totalDefects = totals.reduce((sum, item) => sum + item.total, 0);
-        const paretoData = totals.map(item => item.total);
-        const paretoLine = totals.map(item => {
-            cumulative += item.total;
-            return (cumulative / (totalDefects || 1)) * 100;
-        });
-
-        if (paretoChartInstance) paretoChartInstance.destroy();
-        const ctxPareto = document.getElementById('paretoChart').getContext('2d');
-        paretoChartInstance = new Chart(ctxPareto, {
-            type: 'bar',
-            data: {
-                labels: totals.map(item => item.name),
-                datasets: [
-                    { type: 'line', label: 'Cumulative %', data: paretoLine, borderColor: '#141413', backgroundColor: '#141413', yAxisID: 'y1', tension: 0.1, fill: false },
-                    { type: 'bar', label: 'Defect Count', data: paretoData, backgroundColor: '#eda100', yAxisID: 'y' }
-                ]
-            },
-            options: {
-                responsive: true, maintainAspectRatio: false,
-                scales: {
-                    y: { beginAtZero: true, position: 'left' },
-                    y1: { beginAtZero: true, max: 100, position: 'right', grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%' } }
+            const ctxTrend = document.getElementById(`trendChart_${line}`).getContext('2d');
+            const trendChart = new Chart(ctxTrend, {
+                type: 'bar',
+                data: { labels: globalStore.intervals, datasets: datasets },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    animation: false,
+                    plugins: { legend: { position: 'top' } },
+                    scales: { y: { beginAtZero: true, title: { display: true, text: 'Defect Count' } } }
                 }
-            }
+            });
+            chartInstances.push(trendChart);
+
+            let totals = Object.keys(defectMap).map(name => ({
+                name: name,
+                total: defectMap[name].reduce((a, b) => a + b, 0)
+            })).sort((a, b) => b.total - a.total);
+
+            let cumulative = 0;
+            const totalDefects = totals.reduce((sum, item) => sum + item.total, 0);
+            const paretoData = totals.map(item => item.total);
+            const paretoLine = totals.map(item => {
+                cumulative += item.total;
+                return (cumulative / (totalDefects || 1)) * 100;
+            });
+
+            const ctxPareto = document.getElementById(`paretoChart_${line}`).getContext('2d');
+            const paretoChart = new Chart(ctxPareto, {
+                type: 'bar',
+                data: {
+                    labels: totals.map(item => item.name),
+                    datasets: [
+                        { type: 'line', label: 'Cumulative %', data: paretoLine, borderColor: '#141413', backgroundColor: '#141413', yAxisID: 'y1', tension: 0.1, fill: false },
+                        { type: 'bar', label: 'Defect Count', data: paretoData, backgroundColor: '#eda100', yAxisID: 'y' }
+                    ]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    animation: false,
+                    scales: {
+                        y: { beginAtZero: true, position: 'left' },
+                        y1: { beginAtZero: true, max: 100, position: 'right', grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%' } }
+                    }
+                }
+            });
+            chartInstances.push(paretoChart);
         });
     }
 
-    async function captureFullTables() {
-        const target = document.getElementById('tablesWrapper');
+    // Generic Capture Engine
+    async function captureElement(elementId) {
+        const target = document.getElementById(elementId);
         const printContainer = document.createElement('div');
         printContainer.style.position = 'absolute';
         printContainer.style.top = '-9999px';
@@ -422,7 +454,6 @@
             c.style.overflow = 'visible'; 
             c.style.width = '100%';
             c.style.border = 'none'; 
-            c.style.marginBottom = '20px';
         });
         
         const tables = clone.querySelectorAll('.excel-table');
@@ -431,6 +462,17 @@
             t.style.minWidth = '1200px'; 
             t.style.border = '1px solid #141413'; 
         });
+
+        const originalCanvases = target.querySelectorAll('canvas');
+        const clonedCanvases = clone.querySelectorAll('canvas');
+        for (let i = 0; i < originalCanvases.length; i++) {
+            const dataURL = originalCanvases[i].toDataURL("image/png");
+            const img = document.createElement('img');
+            img.src = dataURL;
+            img.style.width = '100%';
+            img.style.height = '100%';
+            clonedCanvases[i].parentNode.replaceChild(img, clonedCanvases[i]);
+        }
 
         printContainer.appendChild(clone);
         document.body.appendChild(printContainer);
@@ -447,49 +489,46 @@
         }
     }
 
-    document.getElementById('copyTableBtn').addEventListener('click', async function() {
-        const btn = this;
+    // Capture Actions
+    async function handleCopy(elementId, btn) {
         const originalText = btn.textContent;
         btn.textContent = '📸 Copying...';
         try {
-            const canvas = await captureFullTables();
+            const canvas = await captureElement(elementId);
             canvas.toBlob(async function(blob) {
                 try {
                     const item = new ClipboardItem({ "image/png": blob });
                     await navigator.clipboard.write([item]);
-                    btn.textContent = '✅ Copied to Clipboard!';
+                    btn.textContent = '✅ Copied!';
                     setTimeout(() => btn.textContent = originalText, 2000);
                 } catch (err) {
-                    console.error('Clipboard write failed.', err);
-                    btn.textContent = '❌ Failed to copy (Use Mobile Button Instead)';
+                    btn.textContent = '❌ Failed (Use Mobile)';
                     setTimeout(() => btn.textContent = originalText, 2500);
                 }
             });
         } catch(e) {
-            console.error('html2canvas failed', e);
-            btn.textContent = '❌ Error generating image';
+            btn.textContent = '❌ Error';
             setTimeout(() => btn.textContent = originalText, 2000);
         }
-    });
+    }
 
-    document.getElementById('shareTableBtn').addEventListener('click', async function() {
-        const btn = this;
+    async function handleShare(elementId, btn, filePrefix) {
         const originalText = btn.textContent;
         btn.textContent = '📸 Generating...';
         const reportDate = document.getElementById('dateSelector').value || "Report";
         
         try {
-            const canvas = await captureFullTables();
+            const canvas = await captureElement(elementId);
             canvas.toBlob(async function(blob) {
                 try {
-                    const fileName = `QC_Report_${reportDate}.png`;
+                    const fileName = `${filePrefix}_${reportDate}.png`;
                     const file = new File([blob], fileName, { type: "image/png" });
                     
                     if (navigator.canShare && navigator.canShare({ files: [file] })) {
                         await navigator.share({
                             files: [file],
-                            title: 'QC 4-Hour Report',
-                            text: `QC Inspection Report for ${reportDate}`
+                            title: `QC 4-Hour ${filePrefix}`,
+                            text: `QC ${filePrefix} for ${reportDate}`
                         });
                         btn.textContent = '✅ Shared!';
                     } else {
@@ -505,20 +544,27 @@
                     }
                     setTimeout(() => btn.textContent = originalText, 2500);
                 } catch (err) {
-                    console.error('Share/Download failed.', err);
-                    btn.textContent = '❌ Action failed';
+                    btn.textContent = '❌ Failed';
                     setTimeout(() => btn.textContent = originalText, 2500);
                 }
             }, "image/png");
         } catch(e) {
-            console.error('html2canvas failed', e);
             btn.textContent = '❌ Error';
             setTimeout(() => btn.textContent = originalText, 2000);
         }
-    });
+    }
 
-    // Excel Export
-    document.getElementById('exportExcelBtn').addEventListener('click', function() {
+    // Attach Event Listeners
+    document.getElementById('copyTableBtn').addEventListener('click', function() { handleCopy('tablesWrapper', this); });
+    document.getElementById('shareTableBtn').addEventListener('click', function() { handleShare('tablesWrapper', this, 'QC_Tables'); });
+    
+    document.getElementById('copyChartBtn').addEventListener('click', function() { handleCopy('chartsWrapper', this); });
+    document.getElementById('shareChartBtn').addEventListener('click', function() { handleShare('chartsWrapper', this, 'QC_Charts'); });
+
+    document.getElementById('exportExcelBtn').addEventListener('click', exportToExcel);
+    document.getElementById('exportExcelBtn2').addEventListener('click', exportToExcel);
+
+    function exportToExcel() {
         const btn = this;
         const originalText = btn.textContent;
         btn.textContent = '📊 Exporting...';
@@ -644,12 +690,8 @@
             btn.textContent = '❌ Export Failed';
             setTimeout(() => btn.textContent = originalText, 2500);
         }
-    });
+    }
 
-    document.querySelectorAll('#lineToggles input').forEach(cb => {
-        cb.addEventListener('change', renderDashboard);
-    });
-    renderDashboard();
 </script>
 
 </body>
