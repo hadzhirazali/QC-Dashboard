@@ -75,40 +75,49 @@
             <select id="dateSelector" class="date-picker">
                 <option value="">No Dates Available</option>
             </select>
+            <span style="color: var(--ink3); font-size: 12px; font-weight: normal; margin-left: 10px;">*(Night Shift 00:00 - 08:00 AM is grouped into the previous day's report)*</span>
         </div>
     </header>
 
-    <!-- Table Action Buttons (Top) -->
-    <div style="display: flex; justify-content: flex-end; gap: 10px;">
-        <button id="exportExcelBtn" class="upload-btn" style="display: none; background: #17673f; border-color: #17673f; color: #fff;">
-            📊 Download Excel (下载Excel)
-        </button>
-        <button id="shareTableBtn" class="upload-btn" style="display: none; background: #2a78d6; border-color: #2a78d6; color: #fff;">
-            📤 Share Tables Image (Mobile)
-        </button>
-        <button id="copyTableBtn" class="upload-btn" style="display: none; background: #fff; border-color: #2a78d6; color: #2a78d6;">
-            📋 Copy Tables (PC)
-        </button>
+    <!-- Empty Message -->
+    <div id="noDataMessage" style="display: none; color: var(--ink3); text-align: center; padding: 20px;">
+        No data available for the selected date and workstation combination.
     </div>
 
-    <!-- ALL Tables go here -->
-    <div id="tablesWrapper" style="padding: 10px; background: var(--bg); margin: -10px;"></div>
-
-    <!-- Chart Action Buttons (Middle) -->
-    <div id="chartActions" style="display: none; justify-content: flex-end; gap: 10px; margin-top: 20px; border-top: 2px dashed var(--line); padding-top: 20px;">
-        <button id="exportExcelBtn2" class="upload-btn" style="background: #17673f; border-color: #17673f; color: #fff;">
-            📊 Download Excel (下载Excel)
-        </button>
-        <button id="shareChartBtn" class="upload-btn" style="background: #2a78d6; border-color: #2a78d6; color: #fff;">
-            📤 Share Charts Image (Mobile)
-        </button>
-        <button id="copyChartBtn" class="upload-btn" style="background: #fff; border-color: #2a78d6; color: #2a78d6;">
-            📋 Copy Charts (PC)
-        </button>
+    <!-- TABLES SECTION (Top) -->
+    <div id="tablesSection" style="display: none;">
+        <!-- BUTTONS AT THE TOP EXACTLY WHERE THE RED BOX WAS -->
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-bottom: 16px;">
+            <button id="exportExcelBtn_top" class="upload-btn" style="background: #17673f; border-color: #17673f; color: #fff;">
+                📊 Download Excel (下载Excel)
+            </button>
+            <button id="shareTableBtn" class="upload-btn" style="background: #2a78d6; border-color: #2a78d6; color: #fff;">
+                📤 Share Tables Image (Mobile)
+            </button>
+            <button id="copyTableBtn" class="upload-btn" style="background: #fff; border-color: #2a78d6; color: #2a78d6;">
+                📋 Copy Tables (PC)
+            </button>
+        </div>
+        <div id="tablesContainer" style="padding: 10px; background: var(--bg); margin: -10px;"></div>
     </div>
 
-    <!-- ALL Charts go here -->
-    <div id="chartsWrapper" style="padding: 10px; background: var(--bg); margin: -10px;"></div>
+    <!-- CHARTS SECTION (Bottom) -->
+    <div id="chartsSection" style="display: none; margin-top: 30px; border-top: 2px dashed var(--line); padding-top: 20px;">
+        <!-- BUTTONS AT THE TOP OF THE CHARTS SECTION -->
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-bottom: 16px;">
+            <button id="exportExcelBtn_bottom" class="upload-btn" style="background: #17673f; border-color: #17673f; color: #fff;">
+                📊 Download Excel (下载Excel)
+            </button>
+            <button id="shareChartBtn" class="upload-btn" style="background: #2a78d6; border-color: #2a78d6; color: #fff;">
+                📤 Share Charts Image (Mobile)
+            </button>
+            <button id="copyChartBtn" class="upload-btn" style="background: #fff; border-color: #2a78d6; color: #2a78d6;">
+                📋 Copy Charts (PC)
+            </button>
+        </div>
+        <div id="chartsContainer" style="padding: 10px; background: var(--bg); margin: -10px;"></div>
+    </div>
+
 </div>
 
 <script id="qc-data" type="application/json">
@@ -125,6 +134,7 @@
     let chartInstances = [];
     let processedBarcodes = new Set();
 
+    // EXACT PARSER FROM YOUR WORKING 27.10.2026 FILE
     function parseMESData(dataArray) {
         dataArray.forEach(rawRow => {
             const row = {};
@@ -220,6 +230,7 @@
         reader.onload = function(e) {
             try {
                 const data = new Uint8Array(e.target.result);
+                // EXACT READER FROM YOUR WORKING FILE
                 const workbook = XLSX.read(data, {type: 'array', cellDates: true});
                 const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
                 const jsonData = XLSX.utils.sheet_to_json(firstSheet, { defval: "" });
@@ -239,7 +250,7 @@
                 renderDashboard();
             } catch (error) {
                 console.error(error);
-                alert('Error processing the file. Please ensure it is a standard MES Excel export.');
+                alert('Error processing the file.');
                 document.getElementById('reportDate').textContent = "Status: Error parsing file.";
             }
         };
@@ -248,6 +259,9 @@
     });
     
     document.getElementById('dateSelector').addEventListener('change', renderDashboard);
+    document.querySelectorAll('#lineToggles input').forEach(cb => {
+        cb.addEventListener('change', renderDashboard);
+    });
 
     function generateTableHTML(line, lineData, selectedDate) {
         if (!lineData) return '';
@@ -262,9 +276,7 @@
                 .map(([k, v]) => `${k}(${v})`)
                 .join(', ');
             
-            if (desc === '') {
-                desc = '-';
-            }
+            if (desc === '') desc = '-';
                 
             const aGradeRate = shift.total > 0 ? ((shift.a / shift.total) * 100).toFixed(2) + '%' : '0.00%';
             const dateCell = index === 0 ? `<td rowspan="6">${selectedDate}</td>` : '';
@@ -314,8 +326,17 @@
 
     function renderDashboard() {
         const selectedDate = document.getElementById('dateSelector').value;
+        const noDataMsg = document.getElementById('noDataMessage');
+        const tablesSec = document.getElementById('tablesSection');
+        const chartsSec = document.getElementById('chartsSection');
+        const tablesCon = document.getElementById('tablesContainer');
+        const chartsCon = document.getElementById('chartsContainer');
+
         if(!selectedDate) {
             document.getElementById('reportDate').textContent = "Status: Waiting for Data Upload...";
+            noDataMsg.style.display = 'block';
+            tablesSec.style.display = 'none';
+            chartsSec.style.display = 'none';
             return;
         }
         
@@ -325,47 +346,42 @@
         const checkboxes = document.querySelectorAll('#lineToggles input[type="checkbox"]');
         const selectedLines = Array.from(checkboxes).filter(cb => cb.checked).map(cb => cb.value);
 
-        const tablesWrapper = document.getElementById('tablesWrapper');
-        const chartsWrapper = document.getElementById('chartsWrapper');
-        const chartActions = document.getElementById('chartActions');
-        
-        const copyBtn = document.getElementById('copyTableBtn');
-        const shareBtn = document.getElementById('shareTableBtn');
-        const excelBtn = document.getElementById('exportExcelBtn');
-        
-        // Destroy existing charts to prevent memory leaks
-        chartInstances.forEach(chart => chart.destroy());
+        // Safely clear old charts
+        if (chartInstances && chartInstances.length > 0) {
+            chartInstances.forEach(chart => {
+                if (chart) chart.destroy();
+            });
+        }
         chartInstances = [];
-        
-        tablesWrapper.innerHTML = '';
-        chartsWrapper.innerHTML = '';
+        tablesCon.innerHTML = '';
+        chartsCon.innerHTML = '';
         
         let hasData = false;
-
-        // Step 1: Render ALL tables first
         selectedLines.forEach(line => {
-            if (activeData[line]) {
-                tablesWrapper.insertAdjacentHTML('beforeend', generateTableHTML(line, activeData[line], selectedDate));
-                chartsWrapper.insertAdjacentHTML('beforeend', generateChartsHTML(line));
-                hasData = true;
-            }
+            if (activeData[line]) hasData = true;
         });
-        
+
+        // Hide/Show Logic
         if (!hasData) {
-            tablesWrapper.innerHTML = '<p style="color: var(--ink3); text-align: center; padding: 20px;">No data available for the selected date and workstation combination.</p>';
-            copyBtn.style.display = 'none';
-            shareBtn.style.display = 'none';
-            excelBtn.style.display = 'none';
-            chartActions.style.display = 'none';
+            noDataMsg.style.display = 'block';
+            tablesSec.style.display = 'none';
+            chartsSec.style.display = 'none';
             return;
         }
 
-        copyBtn.style.display = 'inline-block';
-        shareBtn.style.display = 'inline-block';
-        excelBtn.style.display = 'inline-block';
-        chartActions.style.display = 'flex';
+        noDataMsg.style.display = 'none';
+        tablesSec.style.display = 'block';
+        chartsSec.style.display = 'block';
 
-        // Step 2: Render ALL Charts
+        // Draw Tables & Chart Containers
+        selectedLines.forEach(line => {
+            if (activeData[line]) {
+                tablesCon.insertAdjacentHTML('beforeend', generateTableHTML(line, activeData[line], selectedDate));
+                chartsCon.insertAdjacentHTML('beforeend', generateChartsHTML(line));
+            }
+        });
+
+        // Draw Chart.js Graphs inside containers
         selectedLines.forEach(line => {
             const lineData = activeData[line];
             if (!lineData) return;
@@ -385,18 +401,20 @@
                 stack: 'Stack 0'
             }));
 
-            const ctxTrend = document.getElementById(`trendChart_${line}`).getContext('2d');
-            const trendChart = new Chart(ctxTrend, {
-                type: 'bar',
-                data: { labels: globalStore.intervals, datasets: datasets },
-                options: {
-                    responsive: true, maintainAspectRatio: false,
-                    animation: false,
-                    plugins: { legend: { position: 'top' } },
-                    scales: { y: { beginAtZero: true, title: { display: true, text: 'Defect Count' } } }
-                }
-            });
-            chartInstances.push(trendChart);
+            const ctxTrend = document.getElementById(`trendChart_${line}`);
+            if (ctxTrend) {
+                const trendChart = new Chart(ctxTrend.getContext('2d'), {
+                    type: 'bar',
+                    data: { labels: globalStore.intervals, datasets: datasets },
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        animation: false, 
+                        plugins: { legend: { position: 'top' } },
+                        scales: { y: { beginAtZero: true, title: { display: true, text: 'Defect Count' } } }
+                    }
+                });
+                chartInstances.push(trendChart);
+            }
 
             let totals = Object.keys(defectMap).map(name => ({
                 name: name,
@@ -411,30 +429,31 @@
                 return (cumulative / (totalDefects || 1)) * 100;
             });
 
-            const ctxPareto = document.getElementById(`paretoChart_${line}`).getContext('2d');
-            const paretoChart = new Chart(ctxPareto, {
-                type: 'bar',
-                data: {
-                    labels: totals.map(item => item.name),
-                    datasets: [
-                        { type: 'line', label: 'Cumulative %', data: paretoLine, borderColor: '#141413', backgroundColor: '#141413', yAxisID: 'y1', tension: 0.1, fill: false },
-                        { type: 'bar', label: 'Defect Count', data: paretoData, backgroundColor: '#eda100', yAxisID: 'y' }
-                    ]
-                },
-                options: {
-                    responsive: true, maintainAspectRatio: false,
-                    animation: false,
-                    scales: {
-                        y: { beginAtZero: true, position: 'left' },
-                        y1: { beginAtZero: true, max: 100, position: 'right', grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%' } }
+            const ctxPareto = document.getElementById(`paretoChart_${line}`);
+            if (ctxPareto) {
+                const paretoChart = new Chart(ctxPareto.getContext('2d'), {
+                    type: 'bar',
+                    data: {
+                        labels: totals.map(item => item.name),
+                        datasets: [
+                            { type: 'line', label: 'Cumulative %', data: paretoLine, borderColor: '#141413', backgroundColor: '#141413', yAxisID: 'y1', tension: 0.1, fill: false },
+                            { type: 'bar', label: 'Defect Count', data: paretoData, backgroundColor: '#eda100', yAxisID: 'y' }
+                        ]
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        animation: false,
+                        scales: {
+                            y: { beginAtZero: true, position: 'left' },
+                            y1: { beginAtZero: true, max: 100, position: 'right', grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%' } }
+                        }
                     }
-                }
-            });
-            chartInstances.push(paretoChart);
+                });
+                chartInstances.push(paretoChart);
+            }
         });
     }
 
-    // Generic Capture Engine
     async function captureElement(elementId) {
         const target = document.getElementById(elementId);
         const printContainer = document.createElement('div');
@@ -448,6 +467,8 @@
         
         const clone = target.cloneNode(true);
         clone.style.margin = '0';
+        clone.style.display = 'block'; 
+        clone.style.borderTop = 'none'; 
         
         const scrollableContainers = clone.querySelectorAll('.table-container');
         scrollableContainers.forEach(c => {
@@ -478,18 +499,12 @@
         document.body.appendChild(printContainer);
         
         try {
-            const canvas = await html2canvas(printContainer, { 
-                scale: 2, 
-                backgroundColor: '#f1f1ee',
-                windowWidth: 1400
-            });
-            return canvas;
+            return await html2canvas(printContainer, { scale: 2, backgroundColor: '#f1f1ee', windowWidth: 1400 });
         } finally {
             document.body.removeChild(printContainer); 
         }
     }
 
-    // Capture Actions
     async function handleCopy(elementId, btn) {
         const originalText = btn.textContent;
         btn.textContent = '📸 Copying...';
@@ -516,37 +531,26 @@
         const originalText = btn.textContent;
         btn.textContent = '📸 Generating...';
         const reportDate = document.getElementById('dateSelector').value || "Report";
-        
         try {
             const canvas = await captureElement(elementId);
             canvas.toBlob(async function(blob) {
-                try {
-                    const fileName = `${filePrefix}_${reportDate}.png`;
-                    const file = new File([blob], fileName, { type: "image/png" });
-                    
-                    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-                        await navigator.share({
-                            files: [file],
-                            title: `QC 4-Hour ${filePrefix}`,
-                            text: `QC ${filePrefix} for ${reportDate}`
-                        });
-                        btn.textContent = '✅ Shared!';
-                    } else {
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = fileName;
-                        document.body.appendChild(a);
-                        a.click();
-                        document.body.removeChild(a);
-                        URL.revokeObjectURL(url);
-                        btn.textContent = '✅ Downloaded!';
-                    }
-                    setTimeout(() => btn.textContent = originalText, 2500);
-                } catch (err) {
-                    btn.textContent = '❌ Failed';
-                    setTimeout(() => btn.textContent = originalText, 2500);
+                const fileName = `${filePrefix}_${reportDate}.png`;
+                const file = new File([blob], fileName, { type: "image/png" });
+                if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                    await navigator.share({ files: [file], title: `QC 4-Hour ${filePrefix}`, text: `QC ${filePrefix} for ${reportDate}` });
+                    btn.textContent = '✅ Shared!';
+                } else {
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = fileName;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                    btn.textContent = '✅ Downloaded!';
                 }
+                setTimeout(() => btn.textContent = originalText, 2500);
             }, "image/png");
         } catch(e) {
             btn.textContent = '❌ Error';
@@ -554,15 +558,13 @@
         }
     }
 
-    // Attach Event Listeners
-    document.getElementById('copyTableBtn').addEventListener('click', function() { handleCopy('tablesWrapper', this); });
-    document.getElementById('shareTableBtn').addEventListener('click', function() { handleShare('tablesWrapper', this, 'QC_Tables'); });
-    
-    document.getElementById('copyChartBtn').addEventListener('click', function() { handleCopy('chartsWrapper', this); });
-    document.getElementById('shareChartBtn').addEventListener('click', function() { handleShare('chartsWrapper', this, 'QC_Charts'); });
-
-    document.getElementById('exportExcelBtn').addEventListener('click', exportToExcel);
-    document.getElementById('exportExcelBtn2').addEventListener('click', exportToExcel);
+    // Button Bindings
+    document.getElementById('copyTableBtn').addEventListener('click', function() { handleCopy('tablesContainer', this); });
+    document.getElementById('shareTableBtn').addEventListener('click', function() { handleShare('tablesContainer', this, 'QC_Tables'); });
+    document.getElementById('copyChartBtn').addEventListener('click', function() { handleCopy('chartsContainer', this); });
+    document.getElementById('shareChartBtn').addEventListener('click', function() { handleShare('chartsContainer', this, 'QC_Charts'); });
+    document.getElementById('exportExcelBtn_top').addEventListener('click', exportToExcel);
+    document.getElementById('exportExcelBtn_bottom').addEventListener('click', exportToExcel);
 
     function exportToExcel() {
         const btn = this;
@@ -572,7 +574,6 @@
         try {
             const selectedDate = document.getElementById('dateSelector').value || "Report";
             const wb = XLSX.utils.book_new();
-            
             const activeData = globalStore.data_by_date[selectedDate] || {};
             const checkboxes = document.querySelectorAll('#lineToggles input[type="checkbox"]');
             const selectedLines = Array.from(checkboxes).filter(cb => cb.checked).map(cb => cb.value);
@@ -593,34 +594,18 @@
                 for(let i = 0; i < 9; i++) {
                     titleRow.push({
                         v: i === 0 ? `${line} 检验情况汇总 (Inspection Summary)` : "",
-                        s: { 
-                            fill: { fgColor: { rgb: "9BC2E6" } }, 
-                            font: { bold: true, sz: 12 }, 
-                            alignment: { horizontal: "center", vertical: "center" }, 
-                            border: borderAll 
-                        }
+                        s: { fill: { fgColor: { rgb: "9BC2E6" } }, font: { bold: true, sz: 12 }, alignment: { horizontal: "center", vertical: "center" }, border: borderAll }
                     });
                 }
                 ws_data.push(titleRow);
 
                 let headers = [
-                    "日期\nDate", 
-                    "时间\nTime", 
-                    "型号\nModel", 
-                    "总产出\nTotal Output", 
-                    "A", 
-                    "注意\nAttention", 
-                    "F", 
-                    "A品率 (%)\nPeratusan A grade", 
+                    "日期\nDate", "时间\nTime", "型号\nModel", "总产出\nTotal Output", 
+                    "A", "注意\nAttention", "F", "A品率 (%)\nPeratusan A grade", 
                     "判注意描述 Attention Abnormality Description"
                 ];
                 let headerRow = headers.map(h => ({
-                    v: h, 
-                    s: { 
-                        fill: { fgColor: { rgb: "A9D08E" } }, 
-                        alignment: { horizontal: "center", vertical: "center", wrapText: true }, 
-                        border: borderAll 
-                    }
+                    v: h, s: { fill: { fgColor: { rgb: "A9D08E" } }, alignment: { horizontal: "center", vertical: "center", wrapText: true }, border: borderAll }
                 }));
                 ws_data.push(headerRow);
 
@@ -632,52 +617,21 @@
                     const aGradeRate = shift.total > 0 ? (shift.a / shift.total) : 0;
                     const dateCell = index === 0 ? selectedDate : "";
                     
-                    let dataArray = [
-                        dateCell, time, shift.total > 0 ? lineData.model : "", 
-                        shift.total, shift.a, 
-                        shift.n, shift.f, 
-                        aGradeRate, desc
-                    ];
+                    let dataArray = [dateCell, time, shift.total > 0 ? lineData.model : "", shift.total, shift.a, shift.n, shift.f, aGradeRate, desc];
                     
                     let formattedRow = dataArray.map((val, cIdx) => {
-                        let cell = { 
-                            v: val, 
-                            s: { alignment: { horizontal: "center", vertical: "center", wrapText: true }, border: borderAll } 
-                        };
-                        if (cIdx === 7 && typeof val === 'number') {
-                            cell.t = 'n';
-                            cell.z = "0.00%";
-                        }
-                        if (cIdx === 8) {
-                            cell.s.alignment.horizontal = "left";
-                        }
+                        let cell = { v: val, s: { alignment: { horizontal: "center", vertical: "center", wrapText: true }, border: borderAll } };
+                        if (cIdx === 7 && typeof val === 'number') { cell.t = 'n'; cell.z = "0.00%"; }
+                        if (cIdx === 8) { cell.s.alignment.horizontal = "left"; }
                         return cell;
                     });
                     ws_data.push(formattedRow);
                 });
 
                 const ws = XLSX.utils.aoa_to_sheet(ws_data);
-                
-                ws['!merges'] = [
-                    { s: {r: 0, c: 0}, e: {r: 0, c: 8} }, 
-                    { s: {r: 2, c: 0}, e: {r: 7, c: 0} }  
-                ];
-                
-                ws['!cols'] = [
-                    { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 15 }, 
-                    { wch: 8 }, { wch: 12 }, { wch: 8 }, { wch: 18 }, { wch: 100 }  
-                ];
-
-                ws['!rows'] = [
-                    { hpx: 30 }, 
-                    { hpx: 40 }, 
-                    { hpx: 54 }, 
-                    { hpx: 54 }, 
-                    { hpx: 54 }, 
-                    { hpx: 54 }, 
-                    { hpx: 54 }, 
-                    { hpx: 54 }  
-                ];
+                ws['!merges'] = [ { s: {r: 0, c: 0}, e: {r: 0, c: 8} }, { s: {r: 2, c: 0}, e: {r: 7, c: 0} } ];
+                ws['!cols'] = [ { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 15 }, { wch: 8 }, { wch: 12 }, { wch: 8 }, { wch: 18 }, { wch: 100 } ];
+                ws['!rows'] = [ { hpx: 30 }, { hpx: 40 }, { hpx: 54 }, { hpx: 54 }, { hpx: 54 }, { hpx: 54 }, { hpx: 54 }, { hpx: 54 } ];
 
                 XLSX.utils.book_append_sheet(wb, ws, line);
             });
@@ -686,12 +640,10 @@
             btn.textContent = '✅ Downloaded!';
             setTimeout(() => btn.textContent = originalText, 2500);
         } catch (error) {
-            console.error(error);
             btn.textContent = '❌ Export Failed';
             setTimeout(() => btn.textContent = originalText, 2500);
         }
     }
-
 </script>
 
 </body>
