@@ -164,7 +164,8 @@
             if (timeRaw instanceof Date) {
                 dateObj = new Date(timeRaw.getUTCFullYear(), timeRaw.getUTCMonth(), timeRaw.getUTCDate(), timeRaw.getUTCHours(), timeRaw.getUTCMinutes(), timeRaw.getUTCSeconds());
             } else if (typeof timeRaw === 'number') {
-                let epoch = Math.round((timeRaw - 25569) * 86400 * 1000);
+                let Math_round = Math.round;
+                let epoch = Math_round((timeRaw - 25569) * 86400 * 1000);
                 let tempDate = new Date(epoch);
                 dateObj = new Date(tempDate.getUTCFullYear(), tempDate.getUTCMonth(), tempDate.getUTCDate(), tempDate.getUTCHours(), tempDate.getUTCMinutes(), tempDate.getUTCSeconds());
             } else {
@@ -204,9 +205,14 @@
             
             if (!dayData[line]) {
                 dayData[line] = {
-                    model: row['Specification'] || row['Model'] || "",
+                    model: "",
                     shifts: Array.from({length: 6}, () => ({ total: 0, a: 0, n: 0, f: 0, defects: {}, stationRemarks: {} }))
                 };
+            }
+
+            let currentModel = row['Specification'] || row['Model'] || "";
+            if (currentModel && currentModel.toString().trim() !== "") {
+                dayData[line].model = currentModel.toString().trim();
             }
             
             let shiftData = dayData[line].shifts[intervalIndex];
@@ -228,11 +234,16 @@
             if (comp === '注意') {
                 let def1 = row['The main defects in the appearance of large slitting'];
                 let def2 = row['The appearance of the quality inspection instrument is mainly defective'];
+                let wsRaw = row['work station'] || row['Work station'] || row['Work Station'] || '';
+                let ws = String(wsRaw).trim();
                 
                 const addDefect = (desc) => {
                     if (desc && typeof desc === 'string' && desc.trim() !== '') {
                         let nDef = desc.trim().charAt(0).toUpperCase() + desc.trim().slice(1).toLowerCase();
-                        shiftData.defects[nDef] = (shiftData.defects[nDef] || 0) + 1;
+                        if (!shiftData.defects[nDef]) {
+                            shiftData.defects[nDef] = [];
+                        }
+                        shiftData.defects[nDef].push(ws);
                     }
                 };
                 addDefect(def1);
@@ -297,8 +308,12 @@
             const time = intervals[index];
             
             let desc = Object.entries(shift.defects)
-                .sort((a, b) => b[1] - a[1])
-                .map(([k, v]) => `${k}(${v})`)
+                .sort((a, b) => b[1].length - a[1].length)
+                .map(([k, v]) => {
+                    let uniqueWS = [...new Set(v.filter(w => w !== ''))].map(w => 'WS' + w).join(',');
+                    let wsStr = uniqueWS ? ` ${uniqueWS}` : '';
+                    return `${k}${wsStr} (${v.length})`;
+                })
                 .join(', ');
             
             if (desc === '') desc = '-';
@@ -309,7 +324,7 @@
             rowsHtml += `<tr>
                 ${dateCell}
                 <td>${time}</td>
-                <td>${shift.total > 0 ? lineData.model : ''}</td>
+                <td>${lineData.model}</td>
                 <td>${shift.total}</td>
                 <td>${shift.a}</td>
                 <td>${shift.n}</td>
@@ -463,18 +478,40 @@
         chartsCon.innerHTML = '';
         summaryCon.innerHTML = '';
         
-        let hasData = false;
-        selectedLines.forEach(line => {
-            if (activeData[line]) hasData = true;
-        });
-
-        if (!hasData) {
+        if (selectedLines.length === 0) {
             noDataMsg.style.display = 'block';
             tablesSec.style.display = 'none';
             chartsSec.style.display = 'none';
             summarySec.style.display = 'none';
             return;
         }
+
+        selectedLines.forEach(line => {
+            if (!activeData[line]) {
+                activeData[line] = {
+                    model: "",
+                    shifts: Array.from({length: 6}, () => ({ total: 0, a: 0, n: 0, f: 0, defects: {}, stationRemarks: {} }))
+                };
+            }
+            
+            if (!activeData[line].model || activeData[line].model.trim() === "") {
+                let foundModel = "";
+                for (let d of globalStore.dates) {
+                    let dData = globalStore.data_by_date[d];
+                    if (dData && dData[line] && dData[line].model && dData[line].model.trim() !== "") {
+                        foundModel = dData[line].model.trim();
+                        break;
+                    }
+                }
+                
+                if (foundModel !== "") {
+                    activeData[line].model = foundModel;
+                } else {
+                    let m = prompt(`No model found for ${line}.\nPlease enter the Model/Specification (e.g., SW509J):`, "");
+                    activeData[line].model = m ? m.trim() : "N/A";
+                }
+            }
+        });
 
         noDataMsg.style.display = 'none';
         tablesSec.style.display = 'block';
@@ -498,9 +535,9 @@
             // ---- DEFECT TREND & PARETO CHARTS ----
             const defectMap = {};
             lineData.shifts.forEach((shift, index) => {
-                Object.entries(shift.defects).forEach(([defect, count]) => {
+                Object.entries(shift.defects).forEach(([defect, wsArray]) => {
                     if (!defectMap[defect]) defectMap[defect] = [0, 0, 0, 0, 0, 0];
-                    defectMap[defect][index] += count; 
+                    defectMap[defect][index] += wsArray.length; 
                 });
             });
 
@@ -574,7 +611,7 @@
                 textStrokeColor: '#000', textStrokeWidth: 2,
                 anchor: 'center',
                 align: (context) => context.dataIndex % 2 === 0 ? 'end' : 'start',
-                offset: 25 // Pushes even labels 25px out, pulls odd labels 25px in to prevent touching
+                offset: 25 
             };
 
             const ctxGrade = document.getElementById(`gradePie_${line}`);
@@ -745,11 +782,15 @@
 
                 lineData.shifts.forEach((shift, index) => {
                     const time = globalStore.intervals[index];
-                    let desc = Object.entries(shift.defects).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k}(${v})`).join(', ');
+                    let desc = Object.entries(shift.defects).sort((a, b) => b[1].length - a[1].length).map(([k, v]) => {
+                        let uniqueWS = [...new Set(v.filter(w => w !== ''))].map(w => 'WS' + w).join(',');
+                        let wsStr = uniqueWS ? ` ${uniqueWS}` : '';
+                        return `${k}${wsStr} (${v.length})`;
+                    }).join(', ');
                     if (desc === '') desc = '-';
                     const aGradeRate = shift.total > 0 ? (shift.a / shift.total) : 0;
                     
-                    let dataArray = [index === 0 ? selectedDate : "", time, shift.total > 0 ? lineData.model : "", shift.total, shift.a, shift.n, shift.f, aGradeRate, desc];
+                    let dataArray = [index === 0 ? selectedDate : "", time, lineData.model, shift.total, shift.a, shift.n, shift.f, aGradeRate, desc];
                     ws_data.push(dataArray.map((val, cIdx) => {
                         let cell = { v: val, s: { alignment: { horizontal: "center", vertical: "center", wrapText: true }, border: borderAll } };
                         if (cIdx === 7 && typeof val === 'number') { cell.t = 'n'; cell.z = "0.00%"; }
